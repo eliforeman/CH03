@@ -21,7 +21,7 @@
 #include "util.h"
 #include "structs.h"
 
-//super block 
+//the main block /  super block 
 static block* s_block = 0;
 
 //bit functions
@@ -30,24 +30,19 @@ static block* s_block = 0;
     Go through the bits until a 0 is found.
 */
 int
-get_bit_index(char* bits, int size)
+get_bit_index(char* bits, int bit_map_size)
 {
     int count = 0;
     char temp = *(bits);
-    for (int i = 0; i < size; i++) {
-
-        if (count >= 8) {
-            count = 0;
-            temp = *(bits + (i + 1));
-        }
-        else {
+    printf("temp not inside is: %c \n", temp);
+    //go thru entire bitmap
+    for (int i = 0; i < bit_map_size; i++) {
             if (!(((temp >> count) & 1) ^ 0)) {
                 return count + (i * 8);
             }
             i--;
             count += 1;
         }
-    }
     return -1;
 }
 
@@ -82,12 +77,17 @@ sblock_pointer(int offset) {
 void
 storage_init(const char* path)
 {
-    printf("Store file system data in: %s\n", path);
+    //init 
+    printf("Init file system data in: %s\n", path);
     int fd = open(path, O_CREAT | O_RDWR, 0644);
     assert(fd != -1);
+    //truncate the file to the sblock size
     int rv = ftruncate(fd, 1024*1024);
     assert(rv == 0);
+
+
     //super block things
+    // Accredation: Tuck suggested doing this in homework10 instructions
     s_block = mmap(0, 1024 * 1024, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     assert(s_block != MAP_FAILED);
     if(s_block->inode_bitmap_size != 4) {
@@ -100,6 +100,10 @@ storage_init(const char* path)
         s_block->data_num = 48;
         s_block->data_blocks_off = s_block->inodes_off + (s_block->inode_num * (sizeof(inode) + (sizeof(int) * 15)));
         s_block->root_node_off = s_block->inodes_off;
+
+
+
+
 	//init the inodes stuff
         inode* i_node = (inode*)sblock_pointer(s_block->root_node_off);
         i_node->mode = 040755;
@@ -129,6 +133,43 @@ storage_init(const char* path)
 int
 make_file(const char *path, mode_t mode) {
     printf("making file: %s, %04o\n", path, mode);
+    // going thru the bit map until we find one to use
+    int index = get_bit_index((char*)sblock_pointer(s_block->inode_bitmap_off), s_block->inode_bitmap_size);
+    printf("%d",index);
+    // set our bit based on the index we got. 
+    set_bit((char*)sblock_pointer(s_block->inode_bitmap_off), s_block->inode_bitmap_size, 1, index);
+
+    //file
+    inode* node = (inode*)(sblock_pointer(s_block->inodes_off) + (index * (sizeof(inode) + (sizeof(int) * 15))));
+    // init the inode with its settings
+    //TODO: add the link/other things here later
+    node->mode = mode;
+    node->size = 0;
+    node->num_blocks = 0;
+    //flag 1 for file
+    node->flags = 1; 
+    //
+    node->blocks_off = sizeof(inode) + (s_block->inodes_off + (index * (sizeof(inode) + (sizeof(int) * 15))));
+    
+    int* temp_pointer = (int*)sblock_pointer(((inode*)sblock_pointer(s_block->root_node_off))->blocks_off);
+
+    
+    directory* root = (directory*)sblock_pointer(*(temp_pointer));
+    ent* new_ent = (ent*)(sblock_pointer(root->ents_off + (root->inum * (sizeof(ent)+64))));
+    new_ent->node_off = s_block->inodes_off + (index * (sizeof(inode) + (sizeof(int) * 15)));
+    new_ent->name_off = root->ents_off + ((root->inum + 2) * (sizeof(ent)+64));
+    slist* path_name = s_split(path, '/');
+    char* name = (char*)sblock_pointer(new_ent->name_off);
+    strcpy(name, path_name->next->data);
+    root->inum += 1;
+
+    return 0;
+}
+
+int
+make_dir(const char *path, mode_t mode) {
+    printf("making directory: %s, %04o\n", path, mode);
+    //get the bits
     int index = get_bit_index((char*)sblock_pointer(s_block->inode_bitmap_off), s_block->inode_bitmap_size);
     set_bit((char*)sblock_pointer(s_block->inode_bitmap_off), s_block->inode_bitmap_size, 1, index);
 
@@ -136,7 +177,7 @@ make_file(const char *path, mode_t mode) {
     node->mode = mode;
     node->size = 0;
     node->num_blocks = 0;
-    node->flags = 1; 
+    node->flags = 0; 
     node->blocks_off = sizeof(inode) + (s_block->inodes_off + (index * (sizeof(inode) + (sizeof(int) * 15))));
 
     int* temp_pointer = (int*)sblock_pointer(((inode*)sblock_pointer(s_block->root_node_off))->blocks_off);
@@ -152,6 +193,7 @@ make_file(const char *path, mode_t mode) {
 
     return 0;
 }
+
 
 // point to the file datas entry
 ent*
@@ -339,3 +381,9 @@ storage_rename(const char *from_path, const char *to_path)
     return 0;
 }
 
+/*hard links*/
+int
+storage_link(){
+
+     return 0;
+}

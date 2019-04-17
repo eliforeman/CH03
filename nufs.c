@@ -83,15 +83,36 @@ nufs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 // mknod makes a filesystem object like a file or directory
 // called for: man 2 open, man 2 link
 int
-nufs_mknod(const char *path, mode_t mode)
+nufs_mknod(const char *path, mode_t mode, int flag)
 {
+
     printf("mknod(%s, %04o)\n", path, mode);
-    int rv = make_file(path, mode);
-    if (rv == -1) {
-        return -ENOENT;
+   /* if(flag == 1){
+    printf("make dir!");
+    int rv = make_dir(path, mode);
+    	if (rv == -1) {
+            return -ENOENT;
+    	}
+    	else {
+            return 0;
+    	}
     }
-    else {
-        return 0;
+    else{
+    printf("make file!");
+    int rv = make_file(path,mode);
+        if(rv == -1){
+		return -ENOENT;
+	}
+	else{
+		return 0;
+	}
+    }*/
+    int rv = make_file(path,mode);
+    if(rv == -1){
+	    return -ENOENT;
+    }
+    else{
+	    return 0;
     }
 }
 //rename!!
@@ -130,6 +151,32 @@ nufs_write(const char *path, const char *buf, size_t size, off_t offset, struct 
     int rv = storage_write(path, buf, size, offset, fi);
     return (int)size;
 }
+// remove a directory from the block
+/*int
+nufs_rmdir(const char *path){
+	int rv = -1;
+	return rv;
+}
+*/
+
+// most of the following callbacks implement
+// another system call; see section 2 of the manual
+int
+nufs_mkdir(const char *path, mode_t mode)
+{
+    int rv = nufs_mknod(path, mode | 040000, 1);
+    printf("mkdir(%s) -> %d\n", path, rv);
+    return rv;
+}
+
+
+int
+nufs_link(const char *from, const char *to)
+{
+    int rv = -1;
+    printf("link(%s => %s) -> %d\n", from, to, rv);
+    return rv;
+}
 
 
 void
@@ -143,6 +190,11 @@ nufs_init_ops(struct fuse_operations* ops)
     ops->rename   = nufs_rename;
     ops->read     = nufs_read;
     ops->write    = nufs_write;
+    //new stuff
+    ops->mkdir = nufs_mkdir;
+    //ops->rmdir = nufs_rmdir;
+    ops->link = nufs_link;
+   // ops->unlink = nufs_unlink;
 };
 
 struct fuse_operations nufs_ops;
